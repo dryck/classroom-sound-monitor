@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiet Please! 🌈</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Comic Sans MS', 'Chalkboard', 'Arial Rounded', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+      transition: background 0.5s ease;
+      padding: 20px;
+    }
+    
+    body.too-loud {
+      background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+      animation: shake 0.5s ease-in-out;
+    }
+    
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-10px); }
+      75% { transform: translateX(10px); }
+    }
+    
+    .container {
+      text-align: center;
+      background: white;
+      border-radius: 30px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+      max-width: 500px;
+      width: 100%;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      color: #5a4fcf;
+      margin-bottom: 10px;
+    }
+    
+    .mascot {
+      font-size: 5rem;
+      margin: 20px 0;
+      transition: transform 0.3s ease;
+    }
+    
+    .mascot.happy { transform: scale(1.1); }
+    .mascot.sad { transform: scale(0.9) rotate(-10deg); }
+    
+    .status-text {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #333;
+      margin: 20px 0;
+      min-height: 50px;
+    }
+    
+    .status-text.quiet { color: #2ecc71; }
+    .status-text.loud { color: #e74c3c; }
+    
+    .sound-bar {
+      width: 100%;
+      height: 60px;
+      background: #f0f0f0;
+      border-radius: 30px;
+      overflow: hidden;
+      margin: 20px 0;
+      position: relative;
+    }
+    
+    .sound-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2ecc71 0%, #f1c40f 50%, #e74c3c 100%);
+      border-radius: 30px;
+      transition: width 0.2s ease;
+    }
+    
+    .start-btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 20px 50px;
+      font-size: 1.5rem;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      font-family: inherit;
+      font-weight: bold;
+    }
+    
+    .start-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+    }
+    
+    .start-btn:active {
+      transform: translateY(0);
+    }
+    
+    .start-btn.listening {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    
+    .stars {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin: 20px 0;
+    }
+    
+    .star {
+      font-size: 3rem;
+      opacity: 0.3;
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    
+    .star.earned {
+      opacity: 1;
+      animation: bounce 0.5s ease;
+    }
+    
+    @keyframes bounce {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.3); }
+    }
+    
+    .teacher-link {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      background: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      text-decoration: none;
+      color: #667eea;
+      font-weight: bold;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="teacher-link">👩‍🏫 Teacher Mode</a>
+  
+  <div class="container">
+    <h1>Quiet Please!</h1>
+    
+    <div class="mascot" id="mascot">😊</div>
+    
+    <div class="sound-bar">
+      <div class="sound-fill" id="soundFill"></div>
+    </div>
+    
+    <div class="status-text" id="statusText">Press the button to start!</div>
+    
+    <div class="stars" id="stars">
+      <span class="star">⭐</span>
+      <span class="star">⭐</span>
+      <span class="star">⭐</span>
+      <span class="star">⭐</span>
+      <span class="star">⭐</span>
+    </div>
+    
+    <button class="start-btn" id="startBtn" onclick="toggleListening()">
+      🎤 Start Listening
+    </button>
+  </div>
+
+  <script>
+    let audioCtx = null, analyser = null, stream = null;
+    let rafId = null, running = false;
+    let starsEarned = 0;
+    const THRESHOLD = 25; // Simplified threshold
+    
+    const MASCOTS = {
+      happy: ['😊', '🌟', '🦋', '🌈', '🎈', '🌻'],
+      medium: ['😐', '🌤️', '🍃'],
+      loud: ['😱', '⛈️', '🔥', '🚨', '💥']
+    };
+    
+    const MESSAGES = {
+      quiet: ["Great job! 🎉", "Perfect! 🌟", "So quiet! 🦋", "Wonderful! 🌈"],
+      medium: ["Getting louder... 🤫", "A bit noisy... 📚"],
+      loud: ["TOO LOUD! 😱", "Please be quiet! 🤫", "Indoor voices! 🏠"]
+    };
+    
+    function getRandom(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+    
+    async function toggleListening() {
+      if (running) {
+        stopListening();
+      } else {
+        await startListening();
+      }
+    }
+    
+    async function startListening() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch(e) {
+        alert('Please allow microphone access! 🔴');
+        return;
+      }
+      
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      
+      running = true;
+      document.getElementById('startBtn').textContent = '⏹️ Stop';
+      document.getElementById('startBtn').classList.add('listening');
+      document.getElementById('statusText').textContent = "Listening... 🤫";
+      
+      loop();
+    }
+    
+    function stopListening() {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (audioCtx) audioCtx.close();
+      audioCtx = analyser = stream = null;
+      
+      document.getElementById('startBtn').textContent = '🎤 Start Listening';
+      document.getElementById('startBtn').classList.remove('listening');
+      document.getElementById('statusText').textContent = 'Press the button to start!';
+      document.getElementById('statusText').className = 'status-text';
+      document.getElementById('soundFill').style.width = '0%';
+      document.getElementById('mascot').textContent = '😊';
+      document.body.classList.remove('too-loud');
+    }
+    
+    function loop() {
+      if (!running) return;
+      rafId = requestAnimationFrame(loop);
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+      
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      const displayValue = Math.min(100, (average / 128) * 100);
+      
+      document.getElementById('soundFill').style.width = displayValue + '%';
+      
+      const mascot = document.getElementById('mascot');
+      const statusText = document.getElementById('statusText');
+      
+      if (displayValue < 30) {
+        // Quiet
+        mascot.textContent = getRandom(MASCOTS.happy);
+        mascot.className = 'mascot happy';
+        statusText.textContent = getRandom(MESSAGES.quiet);
+        statusText.className = 'status-text quiet';
+        document.body.classList.remove('too-loud');
+        
+        // Earn stars slowly
+        if (Math.random() < 0.005 && starsEarned < 5) {
+          document.querySelectorAll('.star')[starsEarned].classList.add('earned');
+          starsEarned++;
+        }
+      } else if (displayValue < 60) {
+        // Medium
+        mascot.textContent = getRandom(MASCOTS.medium);
+        mascot.className = 'mascot';
+        statusText.textContent = getRandom(MESSAGES.medium);
+        statusText.className = 'status-text';
+        document.body.classList.remove('too-loud');
+      } else {
+        // Too loud
+        mascot.textContent = getRandom(MASCOTS.loud);
+        mascot.className = 'mascot sad';
+        statusText.textContent = getRandom(MESSAGES.loud);
+        statusText.className = 'status-text loud';
+        document.body.classList.add('too-loud');
+      }
+    }
+  </script>
+</body>
+</html>
