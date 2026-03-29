@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sound Level Monitor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #f0ece4;
+      color: #2e2a22;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    /* ── Alert overlay ── */
+    #alert-overlay {
+      position: fixed; inset: 0;
+      background: rgba(220,60,30,0);
+      pointer-events: none; z-index: 100;
+    }
+    #alert-overlay.flash { animation: flash-anim 0.6s ease-out forwards; }
+    @keyframes flash-anim {
+      0%   { background: rgba(220,60,30,0.45); }
+      40%  { background: rgba(220,100,30,0.22); }
+      100% { background: rgba(220,60,30,0.00); }
+    }
+
+    h1 {
+      font-size: 1.1rem; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase; color: #5a5248;
+    }
+
+    #kids-link {
+      position: fixed; top: 12px; right: 14px;
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+      text-decoration: none; color: #7a7060;
+      background: #e6dfd4; border: 1.5px solid #c8bfb0;
+      border-radius: 20px; padding: 4px 12px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #kids-link:hover { color: #177a50; border-color: #177a50; }
+
+    /* ── Meter ── */
+    #meter-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    canvas#meter { border-radius: 10px; display: block; box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
+    #db-scale {
+      width: 340px; display: flex; justify-content: space-between;
+      font-size: 0.67rem; color: #6a6258; letter-spacing: 0.03em; padding: 0 2px;
+    }
+    #db-scale .scale-item {
+      display: flex; flex-direction: column; align-items: center; gap: 1px;
+    }
+    #db-scale .scale-emoji { font-size: 1rem; line-height: 1; }
+    #db-scale .scale-num   { font-size: 0.62rem; color: #7a7268; font-weight: 600; }
+    #db-display-wrap { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+    #db-display {
+      font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em; color: #177a50;
+      transition: color 0.1s; min-width: 200px; text-align: center;
+    }
+    #db-display.warn { color: #c03a08; }
+    #db-situation {
+      font-size: 0.72rem; color: #5a5248; letter-spacing: 0.03em;
+      text-align: center; min-height: 1.1em; transition: color 0.2s;
+      font-weight: 500;
+    }
+    #db-situation.warn { color: #c03a08; font-weight: 700; }
+
+    /* ── Sustain bar ── */
+    #sustain-bar-wrap {
+      width: 340px; height: 5px; background: rgba(0,0,0,0.1);
+      border-radius: 3px; overflow: hidden; margin-top: 1px;
+    }
+    #sustain-bar-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #e8b840 0%, #e06828 60%, #c83030 100%);
+      border-radius: 3px;
+      transition: width 0.08s linear;
+    }
+
+    /* ── Timer ── */
+    #timer-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    #timer-label {
+      font-size: 0.67rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #6a6258; font-weight: 600;
+    }
+    #timer-display {
+      font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums;
+      letter-spacing: 0.04em; color: #3a3530;
+      transition: color 0.2s;
+    }
+    #timer-display.running { color: #177a50; }
+    #timer-display.done    { color: #c03a08; }
+
+    /* ── History ── */
+    #history-wrap {
+      display: flex; gap: 16px; align-items: stretch; justify-content: center;
+      width: 100%; max-width: 400px;
+    }
+    .history-card {
+      flex: 1; background: #e6dfd4; border: 1px solid #c8bfb0;
+      border-radius: 10px; padding: 10px 14px;
+      display: flex; flex-direction: column; gap: 3px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.09);
+    }
+    .history-card .h-label {
+      font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase;
+      color: #6a6258; font-weight: 700;
+    }
+    .history-card .h-time {
+      font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums;
+      color: #1e1a14; letter-spacing: 0.02em;
+    }
+    .history-card .h-time.empty { color: #b0a898; }
+    .history-card .h-sub {
+      font-size: 0.72rem; color: #6a6258; font-weight: 500;
+    }
+
+    /* ── Warnings ── */
+    #warnings-section { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+    #warnings-label { font-size: 0.67rem; letter-spacing: 0.08em; text-transform: uppercase; color: #5a5248; font-weight: 700; }
+    #warnings-icons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .warn-icon {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: #e84040; box-shadow: 0 2px 10px rgba(200,40,40,0.35);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .warn-icon.used { background: #c4bdb4; box-shadow: none; }
+    .warn-icon.burn { animation: burn-anim 0.45s ease-out forwards; }
+    @keyframes burn-anim {
+      0%   { transform: scale(1.45); background: #f5c842; box-shadow: 0 0 28px rgba(240,190,30,0.8); }
+      60%  { transform: scale(0.75); }
+      100% { transform: scale(1);   background: #c4bdb4; box-shadow: none; }
+    }
+    #warnings-counter { font-size: 0.72rem; color: #5a5248; font-weight: 600; letter-spacing: 0.04em; }
+    #warnings-counter.empty { color: #c03a08; font-weight: 700; }
+
+    #reset-btn {
+      padding: 4px 14px; font-size: 0.68rem; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      border: 1.5px solid #a89e90; border-radius: 50px;
+      cursor: pointer; background: transparent; color: #5a5248;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    #reset-btn:hover { border-color: #177a50; color: #177a50; }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 8px; width: 100%; max-width: 400px;
+    }
+    button#toggle-btn {
+      padding: 9px 38px; font-size: 0.92rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      border: none; border-radius: 50px; cursor: pointer;
+      background: linear-gradient(135deg, #1e9e68, #00a8d4);
+      color: #fff; transition: transform 0.1s, box-shadow 0.2s;
+      box-shadow: 0 4px 18px rgba(30,158,104,0.32);
+    }
+    button#toggle-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 26px rgba(30,158,104,0.48); }
+    button#toggle-btn.active { background: linear-gradient(135deg,#e05020,#d43060); box-shadow: 0 4px 18px rgba(210,60,30,0.32); }
+    button#toggle-btn.active:hover { box-shadow: 0 8px 26px rgba(210,60,30,0.50); }
+
+    .slider-group { width: 100%; display: flex; flex-direction: column; gap: 5px; }
+    .slider-label { display: flex; justify-content: space-between; font-size: 0.8rem; color: #5a5248; font-weight: 500; }
+    .slider-label span { color: #1e1a14; font-weight: 700; }
+
+    .row-label { display: flex; align-items: center; gap: 10px; width: 100%; }
+    .row-label label { font-size: 0.8rem; color: #5a5248; font-weight: 500; white-space: nowrap; }
+    .row-label input[type=number] {
+      width: 58px; background: #e6dfd4; border: 1.5px solid #b0a898;
+      border-radius: 6px; color: #1e1a14; font-size: 0.88rem; font-weight: 600;
+      text-align: center; padding: 4px 6px; outline: none;
+    }
+    .row-label input[type=number]:focus { border-color: #177a50; }
+
+    input[type=range] {
+      -webkit-appearance: none; width: 100%; height: 6px;
+      border-radius: 6px; background: #c8c0b4; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 20px; height: 20px;
+      border-radius: 50%; background: #177a50; cursor: pointer;
+      box-shadow: 0 0 6px rgba(23,122,80,0.4); transition: box-shadow 0.15s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover { box-shadow: 0 0 14px rgba(23,122,80,0.65); }
+
+    #status {
+      font-size: 0.76rem; color: #6a6258; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase; min-height: 1.2em;
+    }
+    #status.on    { color: #177a50; }
+    #status.alert { color: #c03a08; }
+
+    /* ── Coins ── */
+    #coins-section {
+      width: 100%; max-width: 400px;
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      background: #e6dfd4; border: 1px solid #c8bfb0;
+      border-radius: 12px; padding: 9px 14px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.09);
+    }
+    #coins-header {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+    }
+    #coins-label {
+      font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
+      color: #6a6258; font-weight: 700;
+    }
+    #lesson-time-remaining {
+      font-size: 0.75rem; color: #7a7060; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    #coins-bar-wrap {
+      width: 100%; height: 18px; background: #cfc8be;
+      border-radius: 11px; overflow: hidden;
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.14);
+      position: relative;
+    }
+    #coins-bar-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #b87d0a 0%, #e8a820 50%, #f5cc44 100%);
+      border-radius: 11px;
+      transition: width 1s linear;
+      position: relative;
+    }
+    #coins-bar-fill::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 60%);
+      border-radius: 11px;
+    }
+    #coins-display {
+      font-size: 1.4rem; font-weight: 700; color: #7a5800;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+    }
+    #coins-display.complete { color: #177a50; }
+    #coins-settings {
+      width: 100%; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+    }
+    .coin-setting {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .coin-setting label { font-size: 0.78rem; color: #5a5248; font-weight: 500; white-space: nowrap; }
+    .coin-setting input[type=number] {
+      width: 62px; background: #f0ece4; border: 1.5px solid #b0a898;
+      border-radius: 6px; color: #1e1a14; font-size: 0.88rem; font-weight: 600;
+      text-align: center; padding: 3px 5px; outline: none;
+    }
+    .coin-setting input[type=number]:focus { border-color: #b87d0a; }
+    .coin-setting .unit { font-size: 0.82rem; color: #7a7060; }
+  </style>
+</head>
+<body>
+
+<div id="alert-overlay"></div>
+
+<a id="kids-link" href="kids.html">🧊 Kids mode</a>
+
+<h1>Sound Monitor</h1>
+
+<!-- Meter -->
+<div id="meter-wrap">
+  <canvas id="meter" width="340" height="28"></canvas>
+  <div id="sustain-bar-wrap"><div id="sustain-bar-fill"></div></div>
+  <div id="db-scale">
+    <div class="scale-item"><span class="scale-emoji">🤫</span><span class="scale-num">0</span></div>
+    <div class="scale-item"><span class="scale-emoji">📚</span><span class="scale-num">10</span></div>
+    <div class="scale-item"><span class="scale-emoji">💬</span><span class="scale-num">20</span></div>
+    <div class="scale-item"><span class="scale-emoji">🔊</span><span class="scale-num">30</span></div>
+    <div class="scale-item"><span class="scale-emoji">📢</span><span class="scale-num">40</span></div>
+  </div>
+  <div id="db-display-wrap">
+    <div id="db-display">--</div>
+    <div id="db-situation">–</div>
+  </div>
+</div>
+
+<!-- Coins -->
+<div id="coins-section">
+  <div id="coins-header">
+    <div id="coins-label">Coins earned</div>
+    <div id="lesson-time-remaining">––:–– left</div>
+  </div>
+  <div id="coins-bar-wrap">
+    <div id="coins-bar-fill"></div>
+  </div>
+  <div id="coins-display">0 🪙</div>
+  <div id="coins-settings">
+    <div class="coin-setting">
+      <label for="lesson-min-input">Lesson:</label>
+      <input type="number" id="lesson-min-input" min="1" max="180" value="40"
+             oninput="onLessonDurationChange(this.value)">
+      <span class="unit">min</span>
+    </div>
+    <div class="coin-setting">
+      <label for="max-coins-input">Max coins:</label>
+      <input type="number" id="max-coins-input" min="1" max="9999" value="100"
+             oninput="onMaxCoinsChange(this.value)">
+      <span class="unit">🪙</span>
+    </div>
+  </div>
+</div>
+
+<!-- Timer -->
+<div id="timer-wrap">
+  <div id="timer-label">Time until all warnings spent</div>
+  <div id="timer-display">0:00</div>
+</div>
+
+<!-- Warnings -->
+<div id="warnings-section">
+  <div id="warnings-label">Warnings remaining</div>
+  <div class="row-label" style="justify-content:center; margin-bottom:2px;">
+    <label for="max-warn-input" style="font-size:0.75rem;">Warnings per session:</label>
+    <input type="number" id="max-warn-input" min="1" max="20" value="3"
+           oninput="onMaxWarningsChange(this.value)">
+  </div>
+  <div id="warnings-icons"></div>
+  <div id="warnings-counter"></div>
+  <button id="reset-btn" onclick="resetWarnings()">Reset warnings</button>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <button id="toggle-btn" onclick="toggleMic()">Start microphone</button>
+
+  <div class="slider-group">
+    <div class="slider-label">
+      Noise threshold
+      <span id="threshold-val">22</span>
+    </div>
+    <input type="range" id="threshold-slider"
+           min="0" max="40" step="1" value="22"
+           oninput="onThresholdChange(this.value)">
+  </div>
+
+  <div class="slider-group">
+    <div class="slider-label">
+      Sustained noise before alert
+      <span id="sustain-val">2.0 s</span>
+    </div>
+    <input type="range" id="sustain-slider" min="1" max="16" step="1" value="4"
+           oninput="onSustainChange(this.value)">
+  </div>
+
+  <div class="slider-group">
+    <div class="slider-label">
+      Cooldown between alerts
+      <span id="cooldown-val">1.5 s</span>
+    </div>
+    <input type="range" id="cooldown-slider" min="3" max="30" value="15"
+           oninput="onCooldownChange(this.value)">
+  </div>
+
+  <div id="status">Microphone off</div>
+</div>
+
+<script>
+// ── Scale mapping ─────────────────────────────────────────────────────────────
+// Display scale: 0 (silence) → 40 (max loud), linear in dBFS space.
+// dBFS = displayVal − 40   (so display 0 = −40 dBFS, display 40 = 0 dBFS)
+// displayVal = dBFS + 40
+
+const DB_MIN_FS = -40; // dBFS at display-0
+const DB_MAX_FS =   0; // dBFS at display-40
+
+function dbfsToDisplay(dbfs) {
+  // clamp to −40…0, then shift to 0…40
+  return Math.min(40, Math.max(0, dbfs - DB_MIN_FS));
+}
+function displayToDbfs(d) {
+  return d + DB_MIN_FS; // 0→−40, 40→0
+}
+function dbfsToPos(dbfs) {
+  return Math.min(1, Math.max(0, (dbfs - DB_MIN_FS) / 40));
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let audioCtx  = null, analyser = null, stream = null;
+let rafId     = null, running  = false;
+
+// threshold: stored in dBFS, default −18 dBFS → display 22
+let thresholdDb  = -18;
+let cooldownMs   = 1500;
+let sustainMs    = 2000;   // ms noise must be held above threshold before alert
+let sustainStart = null;   // performance.now() when current over-threshold streak began
+let alertAt      = 0;
+let smoothedRms  = 0;
+
+let maxWarnings  = 3;
+let warningsLeft = 3;
+
+// Timer
+let timerStart    = null;  // Date.now() when mic started or warnings were reset
+let timerInterval = null;
+let timerStopped  = false; // true once all warnings gone
+let timerFinalMs  = 0;
+
+// Coins / lesson
+let lessonDurationMs = 40 * 60 * 1000;
+let maxCoins         = 100;
+let lessonStart      = null;
+let coinInterval     = null;
+
+const SMOOTH_FAST = 0.25;
+const SMOOTH_SLOW = 0.04;
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+const canvas       = document.getElementById('meter');
+const mCtx         = canvas.getContext('2d');
+const dbDisplay    = document.getElementById('db-display');
+const dbSituation  = document.getElementById('db-situation');
+const statusEl     = document.getElementById('status');
+const toggleBtn    = document.getElementById('toggle-btn');
+const overlay      = document.getElementById('alert-overlay');
+const iconsEl      = document.getElementById('warnings-icons');
+const counterEl    = document.getElementById('warnings-counter');
+const timerDisp    = document.getElementById('timer-display');
+const timerLabel   = document.getElementById('timer-label');
+const sustainFill  = document.getElementById('sustain-bar-fill');
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function rmsToDbfs(rms) { return rms > 0 ? 20 * Math.log10(rms) : -Infinity; }
+
+// Returns an emoji + text label for a display value (0–40)
+function getSituation(val) {
+  if (val < 4)  return { emoji: '🤫', text: 'Silence' };
+  if (val < 12) return { emoji: '📚', text: 'Library — perfect for class' };
+  if (val < 20) return { emoji: '💬', text: 'Quiet conversation' };
+  if (val < 28) return { emoji: '🔊', text: 'Getting loud…' };
+  if (val < 35) return { emoji: '📢', text: 'Too loud for class!' };
+  return             { emoji: '🚨', text: 'Way too loud!' };
+}
+
+// ── Coins / lesson ────────────────────────────────────────────────────────────
+function onLessonDurationChange(v) {
+  lessonDurationMs = Math.max(1, parseInt(v) || 1) * 60 * 1000;
+  updateCoins();
+}
+
+function onMaxCoinsChange(v) {
+  maxCoins = Math.max(1, parseInt(v) || 1);
+  updateCoins();
+}
+
+function startLesson() {
+  lessonStart = Date.now();
+  updateCoins();
+  coinInterval = setInterval(updateCoins, 1000);
+}
+
+function stopLesson() {
+  if (coinInterval) { clearInterval(coinInterval); coinInterval = null; }
+  lessonStart = null;
+  document.getElementById('coins-bar-fill').style.width = '0%';
+  document.getElementById('coins-display').textContent = '0 🪙';
+  document.getElementById('coins-display').classList.remove('complete');
+  document.getElementById('lesson-time-remaining').textContent = '––:–– left';
+}
+
+function updateCoins() {
+  if (!lessonStart) return;
+  const elapsed  = Date.now() - lessonStart;
+  const progress = Math.min(1, elapsed / lessonDurationMs);
+  const coins    = Math.floor(progress * maxCoins);
+
+  document.getElementById('coins-bar-fill').style.width = (progress * 100) + '%';
+  document.getElementById('coins-display').textContent  = coins + ' 🪙';
+  document.getElementById('coins-display').classList.toggle('complete', progress >= 1);
+
+  const remaining = Math.max(0, lessonDurationMs - elapsed);
+  if (progress >= 1) {
+    document.getElementById('lesson-time-remaining').textContent = 'Lesson complete! 🎉';
+    if (coinInterval) { clearInterval(coinInterval); coinInterval = null; }
+  } else {
+    const m = Math.floor(remaining / 60000);
+    const s = Math.floor((remaining % 60000) / 1000);
+    document.getElementById('lesson-time-remaining').textContent =
+      m + ':' + String(s).padStart(2, '0') + ' left';
+  }
+}
+
+function formatTime(ms) {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+// ── Timer ─────────────────────────────────────────────────────────────────────
+function startTimer() {
+  timerStart   = Date.now();
+  timerStopped = false;
+  timerFinalMs = 0;
+  timerDisp.className = 'running';
+  timerLabel.textContent = 'Time until all warnings spent';
+  tickTimer();
+  timerInterval = setInterval(tickTimer, 500);
+}
+
+function tickTimer() {
+  if (timerStopped || timerStart === null) return;
+  timerDisp.textContent = formatTime(Date.now() - timerStart);
+}
+
+function stopTimer() {
+  // All warnings burned: hide coins, but keep the timer running
+  timerStopped = true;
+  timerDisp.className = 'done';
+  timerLabel.textContent = 'All warnings spent — time elapsed';
+  document.getElementById('coins-section').style.display = 'none';
+}
+
+function resetTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  timerStart   = null;
+  timerStopped = false;
+  timerFinalMs = 0;
+  timerDisp.textContent = '0:00';
+  timerDisp.className   = '';
+  timerLabel.textContent = 'Time until all warnings spent';
+  document.getElementById('coins-section').style.display = '';
+}
+
+// ── Warnings UI ───────────────────────────────────────────────────────────────
+function buildWarningIcons() {
+  iconsEl.innerHTML = '';
+  for (let i = 0; i < maxWarnings; i++) {
+    const d = document.createElement('div');
+    d.className = 'warn-icon' + (i >= warningsLeft ? ' used' : '');
+    d.id = 'wi-' + i;
+    iconsEl.appendChild(d);
+  }
+  updateCounter();
+}
+
+function updateCounter() {
+  if (warningsLeft <= 0) {
+    counterEl.textContent = 'No warnings left!';
+    counterEl.className = 'empty';
+  } else {
+    counterEl.textContent = warningsLeft + ' / ' + maxWarnings + ' remaining';
+    counterEl.className = '';
+  }
+}
+
+// Returns true if this was the last warning
+function burnWarning() {
+  if (warningsLeft <= 0) return false;
+  warningsLeft--;
+  const icon = document.getElementById('wi-' + warningsLeft);
+  if (icon) {
+    icon.classList.remove('used');
+    icon.classList.add('burn');
+    icon.addEventListener('animationend', () => {
+      icon.classList.remove('burn');
+      icon.classList.add('used');
+    }, { once: true });
+  }
+  updateCounter();
+  if (warningsLeft === 0) {
+    stopTimer();
+    return true;
+  }
+  return false;
+}
+
+function resetWarnings() {
+  warningsLeft = maxWarnings;
+  buildWarningIcons();
+  resetTimer();
+  if (running) startTimer(); // restart if mic is active
+}
+
+function onMaxWarningsChange(v) {
+  const n = Math.max(1, Math.min(20, parseInt(v) || 1));
+  maxWarnings  = n;
+  warningsLeft = n;
+  buildWarningIcons();
+  resetTimer();
+  if (running) startTimer();
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+function onThresholdChange(v) {
+  thresholdDb = displayToDbfs(parseInt(v));
+  document.getElementById('threshold-val').textContent = v;
+}
+
+function onSustainChange(v) {
+  sustainMs = parseInt(v) * 500;
+  document.getElementById('sustain-val').textContent = (parseInt(v) / 2).toFixed(1) + ' s';
+}
+
+function onCooldownChange(v) {
+  cooldownMs = v * 100;
+  document.getElementById('cooldown-val').textContent = (v / 10).toFixed(1) + ' s';
+}
+
+// ── Mic toggle ────────────────────────────────────────────────────────────────
+async function toggleMic() {
+  running ? stopMic() : await startMic();
+}
+
+async function startMic() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch(e) {
+    statusEl.textContent = 'Microphone access denied';
+    statusEl.className = '';
+    return;
+  }
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 1024;
+  audioCtx.createMediaStreamSource(stream).connect(analyser);
+
+  running = true;
+  toggleBtn.textContent = 'Stop';
+  toggleBtn.classList.add('active');
+  statusEl.textContent = 'Listening…';
+  statusEl.className = 'on';
+
+  startTimer();
+  startLesson();
+  loop();
+}
+
+function stopMic() {
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  audioCtx = analyser = stream = null;
+  smoothedRms  = 0;
+  sustainStart = null;
+  sustainFill.style.width = '0%';
+
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  stopLesson();
+
+  toggleBtn.textContent = 'Start microphone';
+  toggleBtn.classList.remove('active');
+  statusEl.textContent = 'Microphone off';
+  statusEl.className = '';
+  dbDisplay.textContent = '--';
+  dbDisplay.classList.remove('warn');
+  dbSituation.textContent = '–';
+  dbSituation.classList.remove('warn');
+  drawMeter(-Infinity);
+}
+
+// ── Audio loop ────────────────────────────────────────────────────────────────
+function loop() {
+  if (!running) return;
+  rafId = requestAnimationFrame(loop);
+
+  const buf = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(buf);
+
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const s = (buf[i] - 128) / 128;
+    sum += s * s;
+  }
+  const rms = Math.sqrt(sum / buf.length);
+
+  const alpha = rms > smoothedRms ? SMOOTH_FAST : SMOOTH_SLOW;
+  smoothedRms += alpha * (rms - smoothedRms);
+
+  const dbfs    = rmsToDbfs(smoothedRms);
+  const dispVal = dbfsToDisplay(dbfs);
+
+  // Update number display (0–40 scale)
+  if (smoothedRms < 0.0001) {
+    dbDisplay.textContent = '0';
+  } else {
+    dbDisplay.textContent = dispVal.toFixed(1);
+  }
+
+  // Situation label
+  const sit = getSituation(dispVal);
+  dbSituation.textContent = sit.emoji + '  ' + sit.text;
+
+  drawMeter(dbfs);
+
+  const isOver = dbfs >= thresholdDb;
+  dbDisplay.classList.toggle('warn', isOver);
+  dbSituation.classList.toggle('warn', isOver);
+
+  if (isOver && !timerStopped) {
+    const now = performance.now();
+    if (sustainStart === null) sustainStart = now;
+    const pct = Math.min(1, (now - sustainStart) / sustainMs);
+    sustainFill.style.width = (pct * 100) + '%';
+
+    if (pct >= 1 && now - alertAt > cooldownMs) {
+      alertAt = now;
+      sustainStart = null;
+      sustainFill.style.width = '0%';
+      triggerAlert();
+    }
+    statusEl.textContent = pct < 1 ? '🔶  Noise building…' : '⚠  Too loud!';
+    statusEl.className = 'alert';
+  } else {
+    sustainStart = null;
+    sustainFill.style.width = '0%';
+    statusEl.textContent = 'Listening…';
+    statusEl.className = 'on';
+  }
+}
+
+// ── Draw meter ────────────────────────────────────────────────────────────────
+function drawMeter(dbfs) {
+  const W = canvas.width, H = canvas.height;
+  mCtx.clearRect(0, 0, W, H);
+
+  mCtx.fillStyle = '#ddd6cc';
+  roundRect(mCtx, 0, 0, W, H, 8); mCtx.fill();
+
+  const pct = dbfsToPos(dbfs);
+  if (pct > 0) {
+    const barW = Math.round(W * pct);
+    const grad = mCtx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0,    '#52c48a');
+    grad.addColorStop(0.55, '#e8b840');
+    grad.addColorStop(0.80, '#e06828');
+    grad.addColorStop(1,    '#c83030');
+    mCtx.fillStyle = grad;
+    roundRect(mCtx, 0, 0, barW, H, 8); mCtx.fill();
+  }
+
+  // Threshold marker at the correct position
+  const tx = Math.round(W * dbfsToPos(thresholdDb));
+  mCtx.strokeStyle = 'rgba(60,40,20,0.45)';
+  mCtx.lineWidth = 2;
+  mCtx.setLineDash([4, 4]);
+  mCtx.beginPath(); mCtx.moveTo(tx, 0); mCtx.lineTo(tx, H); mCtx.stroke();
+  mCtx.setLineDash([]);
+
+  // Threshold label in display-scale (0–40)
+  const dispThresh = dbfsToDisplay(thresholdDb);
+  mCtx.fillStyle = 'rgba(30,20,10,0.85)';
+  mCtx.font = 'bold 11px system-ui';
+  mCtx.textAlign = tx > W - 30 ? 'right' : 'center';
+  mCtx.fillText(dispThresh.toFixed(0), tx, H - 4);
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.quadraticCurveTo(x+w,y,x+w,y+r);
+  c.lineTo(x+w,y+h-r); c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  c.lineTo(x+r,y+h); c.quadraticCurveTo(x,y+h,x,y+h-r);
+  c.lineTo(x,y+r); c.quadraticCurveTo(x,y,x+r,y);
+  c.closePath();
+}
+
+// ── Alert ─────────────────────────────────────────────────────────────────────
+function triggerAlert() {
+  const wasLast = burnWarning();
+
+  overlay.classList.remove('flash');
+  void overlay.offsetWidth;
+  overlay.classList.add('flash');
+
+  wasLast ? playFanfare() : playBeep();
+}
+
+function playBeep() {
+  try {
+    const ac = audioCtx || new AudioContext();
+    const osc = ac.createOscillator(), gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ac.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.4, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.28);
+    osc.start(ac.currentTime); osc.stop(ac.currentTime + 0.28);
+  } catch(e) {}
+}
+
+function playFanfare() {
+  try {
+    const ac = audioCtx || new AudioContext();
+    const notes = [
+      [523.25, 0.00, 0.12, 0.45],
+      [659.25, 0.12, 0.12, 0.45],
+      [783.99, 0.24, 0.12, 0.45],
+      [1046.5, 0.36, 0.30, 0.55],
+      [880.00, 0.36, 0.30, 0.35],
+      [659.25, 0.36, 0.30, 0.25],
+      [783.99, 0.68, 0.15, 0.40],
+      [659.25, 0.83, 0.15, 0.35],
+      [523.25, 0.98, 0.40, 0.50],
+    ];
+    notes.forEach(([freq, t, dur, vol]) => {
+      const osc = ac.createOscillator(), gain = ac.createGain();
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, ac.currentTime + t);
+      gain.gain.setValueAtTime(0, ac.currentTime + t);
+      gain.gain.linearRampToValueAtTime(vol, ac.currentTime + t + 0.02);
+      gain.gain.setValueAtTime(vol, ac.currentTime + t + dur - 0.05);
+      gain.gain.linearRampToValueAtTime(0, ac.currentTime + t + dur);
+      osc.start(ac.currentTime + t); osc.stop(ac.currentTime + t + dur + 0.01);
+    });
+  } catch(e) {}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildWarningIcons();
+drawMeter(-Infinity);
+</script>
+</body>
+</html>
